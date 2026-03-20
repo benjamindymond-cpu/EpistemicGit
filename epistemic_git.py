@@ -1,14 +1,11 @@
-﻿# ZeroChain - Minimal truth-seeking engine
-# MIT License - Copyright (c) 2026 [Your Name or Handle]
-# See LICENSE file for full terms.
-
-import hashlib
+﻿import hashlib
 import json
+import os
+import glob
 from datetime import datetime, timezone
 from typing import List, Dict, Any
 
 class FPNode:
-    """A single node in the chain — immutable, hashed, linked."""
     def __init__(self, content: str, parent_hash: str = None, is_genesis: bool = False):
         self.content = content.strip()
         self.timestamp = datetime.now(timezone.utc).isoformat()
@@ -17,7 +14,6 @@ class FPNode:
         self.is_genesis = is_genesis
     
     def _compute_hash(self) -> str:
-        """SHA-256 hash of timestamp + parent + content (first 16 chars for readability)."""
         data = f"{self.timestamp}|{self.parent_hash or 'genesis'}|{self.content}"
         return hashlib.sha256(data.encode()).hexdigest()[:16]
     
@@ -31,7 +27,6 @@ class FPNode:
         }
 
 class FPChain:
-    """The core chain — append-only, provenance-tracked, fully revisable."""
     def __init__(self, filename: str = "zerochain.json"):
         self.filename = filename
         self.nodes: List[FPNode] = []
@@ -40,13 +35,12 @@ class FPChain:
             self._create_genesis()
     
     def _create_genesis(self):
-        """Initial node — empty genesis with mechanics + provisional anchor."""
         welcome = (
             "ZeroChain — truth-seeking from zero.\n"
             "Nothing is sacred. Everything is revisable.\n"
             "Mechanics:\n"
             "  - Provenance: hashed + linked + immutable\n"
-            "  - Revision: challenge, fork, reconcile, prune anything (including this)\n"
+            "  - Revision: challenge, fork, reconcile, prune anything\n"
             "Provisional observation: Physical reality exists independently and is testable via physics, biology, experiment.\n"
             "All axioms (including this one) are open to challenge.\n"
             "Begin."
@@ -56,8 +50,7 @@ class FPChain:
         self._save()
         print("\n=== ZeroChain started ===\n")
         print(welcome)
-        print(f"\nGenesis hash: {node.hash}")
-        print("Type 'show' to see chain, 'help' for commands.\n")
+        print(f"\nGenesis hash: {node.hash}\n")
     
     def _load(self):
         try:
@@ -72,13 +65,19 @@ class FPChain:
                     self.nodes.append(node)
         except FileNotFoundError:
             pass
+        except json.JSONDecodeError:
+            print(f"Warning: {self.filename} is invalid JSON — starting fresh.")
+            self.nodes = []
     
     def _save(self):
-        with open(self.filename, 'w') as f:
-            json.dump([n.to_dict() for n in self.nodes], f, indent=2)
+        try:
+            with open(self.filename, 'w') as f:
+                json.dump([n.to_dict() for n in self.nodes], f, indent=2)
+            print(f"Saved to {self.filename}")
+        except Exception as e:
+            print(f"Save failed: {e}")
     
     def add(self, content: str) -> str:
-        """Add a new node to the current tip of the chain."""
         parent_hash = self.nodes[-1].hash if self.nodes else None
         node = FPNode(content, parent_hash)
         self.nodes.append(node)
@@ -88,7 +87,6 @@ class FPChain:
         return node.hash
     
     def add_from(self, target_hash: str, content: str) -> str:
-        """Add a new node attached to any existing hash (fork from specific node)."""
         parent_node = next((n for n in self.nodes if n.hash == target_hash), None)
         if not parent_node:
             print(f"Node {target_hash} not found.")
@@ -101,7 +99,6 @@ class FPChain:
         return node.hash
     
     def challenge(self, target_hash: str, reason: str):
-        """Challenge any node — creates a new branch pointing to it."""
         parent_node = next((n for n in self.nodes if n.hash == target_hash), None)
         if not parent_node:
             print(f"Node {target_hash} not found.")
@@ -115,7 +112,6 @@ class FPChain:
         print(f"  Reason: {reason}")
     
     def reconcile_to_core(self, branch_hash: str, summary: str, target_hash: str = None):
-        """Self-pruning: collapse a branch back to core as a summary node."""
         branch_node = next((n for n in self.nodes if n.hash == branch_hash), None)
         if not branch_node:
             print(f"Branch {branch_hash} not found.")
@@ -128,28 +124,13 @@ class FPChain:
         self._save()
         print(f"Branch {branch_hash[:8]} reconciled to core as {new_node.hash}")
         print(f"  Summary: {summary}")
-        
-    def merge_from(self, other_file: str, summary: str, target_hash: str = None):
-        """Merge summary from another chain file into current chain."""
-        import os
-        if not os.path.exists(other_file):
-            print(f"File {other_file} not found.")
-            return
-        other_chain = FPChain(other_file)
-        if not other_chain.nodes:
-            print(f"No nodes in {other_file}")
-            return
-        other_tip = other_chain.nodes[-1].hash
-        self.reconcile_to_core(other_tip, summary, target_hash)
-        print(f"Merged summary from {other_file} into current chain.")
     
     def show_chain(self):
         if not self.nodes:
-            print("Chain empty. Add your first node.")
+            print("Chain empty.")
             return
         
         print("Current Chain (ASCII tree view):")
-        # Build parent-to-children map
         children = {}
         for node in self.nodes:
             parent = node.parent_hash
@@ -165,23 +146,18 @@ class FPChain:
             print(f"{prefix}   {node.content[:120]}{'...' if len(node.content)>120 else ''}")
             print()
             
-            # If reconciled, collapse children (show only summary)
             if r_tag:
-                print(f"{prefix}   (Reconciled branch collapsed — use 'branches {node.parent_hash[:8]}' for full history)")
+                print(f"{prefix}   (Reconciled — use 'branches {node.parent_hash[:8]}' for history)")
                 return
             
-            # Recurse children
             child_list = children.get(node.hash, [])
             for i, child in enumerate(child_list):
                 new_prefix = prefix + ("│   " if i < len(child_list)-1 else "    ")
                 print_tree(child, new_prefix)
         
-        # Start from genesis
-        genesis = self.nodes[0]
-        print_tree(genesis)
+        print_tree(self.nodes[0])
     
     def branches_from(self, target_hash: str):
-        """List all direct children of a node (full branch history)."""
         branches = [n for n in self.nodes if n.parent_hash == target_hash]
         if not branches:
             print(f"No branches from {target_hash[:8]}")
@@ -190,8 +166,8 @@ class FPChain:
         for node in branches:
             print(f"  - {node.hash}  {node.timestamp[:19]}")
             print(f"    {node.content[:80]}{'...' if len(node.content)>80 else ''}")
+    
     def search(self, keyword: str):
-        """Search for nodes containing the keyword (case-insensitive)."""
         keyword = keyword.lower()
         results = []
         for node in self.nodes:
@@ -212,24 +188,22 @@ if __name__ == "__main__":
     chain = FPChain()
     print("\nZeroChain v0.1 — truth-seeking from zero")
     print("Commands:")
-    print("  add <text>             — add to current tip")
-    print("  add-from <hash> <text> — fork from any node")
-    print("  challenge <hash> <reason> — challenge any node")
-    print("  reconcile <hash> <summary> [target] — collapse branch to core")
-    print("  branches <hash>        — show full subtree from node")
-    print("  show                   — show current chain")
-    print("  quit                   — exit")
-    print("\nType 'show' to begin.\n")
-    print("Available commands:")
-    print("  add <text>             — add to current tip")
+    print("  add <text>             — add to tip")
     print("  add-from <hash> <text> — fork from any node")
     print("  challenge <hash> <reason> — critique any node")
     print("  reconcile <hash> <summary> [target] — collapse branch to core")
     print("  branches <hash>        — show full subtree from node")
+    print("  list-branches          — list all named branches")
+    print("  branch <name>          — create named fork")
+    print("  checkout <name>        — switch to named branch")
+    print("  merge <name> <summary> — reconcile from another branch")
+    print("  log                    — show simplified history")
+    print("  search <keyword>       — find nodes by text")
     print("  show                   — display current chain")
     print("  quit                   — exit")
     print("  help                   — show this list")
     print()
+    
     while True:
         cmd = input("> ").strip()
         if not cmd:
@@ -238,6 +212,23 @@ if __name__ == "__main__":
             break
         elif cmd.lower() == "show":
             chain.show_chain()
+        elif cmd == "help":
+            print("Available commands:")
+            print("  add <text>             — add to tip")
+            print("  add-from <hash> <text> — fork from any node")
+            print("  challenge <hash> <reason> — critique any node")
+            print("  reconcile <hash> <summary> [target] — collapse branch to core")
+            print("  branches <hash>        — show full subtree from node")
+            print("  list-branches          — list all named branches")
+            print("  branch <name>          — create named fork")
+            print("  checkout <name>        — switch to named branch")
+            print("  merge <name> <summary> — reconcile from another branch")
+            print("  log                    — show simplified history")
+            print("  search <keyword>       — find nodes by text")
+            print("  show                   — display current chain")
+            print("  quit                   — exit")
+            print("  help                   — show this list")
+            print()
         elif cmd.startswith("add "):
             content = cmd[4:].strip()
             if content:
@@ -253,7 +244,15 @@ if __name__ == "__main__":
             if not content:
                 print("No content.")
                 continue
-            chain.add_from(target_hash, content)
+            parent_node = next((n for n in chain.nodes if n.hash == target_hash), None)
+            if not parent_node:
+                print(f"Node {target_hash} not found.")
+                continue
+            node = FPNode(content, parent_hash=target_hash)
+            chain.nodes.append(node)
+            chain._save()
+            print(f"Added from {target_hash[:8]}: {node.hash}")
+            print(f"  {content[:100]}{'...' if len(content)>100 else ''}")
         elif cmd.startswith("challenge "):
             parts = cmd[10:].strip().split(" ", 1)
             if len(parts) < 2:
@@ -276,44 +275,29 @@ if __name__ == "__main__":
             summary = parts[1]
             target_hash = parts[2] if len(parts) > 2 else None
             chain.reconcile_to_core(branch_hash, summary, target_hash)
-        elif cmd == "help":
-            print("Available commands:")
-            print("  add <text>             — add to current tip")
-            print("  add-from <hash> <text> — fork from any node")
-            print("  challenge <hash> <reason> — critique any node")
-            print("  reconcile <hash> <summary> [target] — collapse branch to core")
-            print("  branches <hash>        — show full subtree from node")
-            print("  show                   — display current chain")
-            print("  quit                   — exit")
-            print("  help                   — show this list")
-            print()
-        elif cmd.startswith("search "):
-            keyword = cmd[7:].strip()
-            if not keyword:
-                print("Usage: search <keyword>")
+        elif cmd == "list-branches":
+            files = glob.glob("*chain*.json")
+            if not files:
+                print("No branches found (only default chain).")
                 continue
-            chain.search(keyword)
+            print("Available branches:")
+            for f in files:
+                name = os.path.splitext(f.replace("zerochain_", "", 1).replace("Zerochain_", "", 1))[0]
+                print(f"  - {name} ({f})")
         elif cmd.startswith("branch "):
             name = cmd[7:].strip()
             if not name:
                 print("Usage: branch <name>")
                 continue
             new_file = f"zerochain_{name}.json"
-            chain._save()  # save current
-            print(f"Branched to {new_file}")
-            print(f"Switch with: checkout {name}")
-
-        elif cmd == "list-branches":
-            import glob
-            files = glob.glob("zerochain_*.json")
-            if not files:
-                print("No branches found (only default chain).")
-                return
-            print("Available branches:")
-            for f in files:
-                name = f.replace("zerochain_", "").replace(".json", "")
-                print(f"  - {name} ({f})")
-
+            try:
+                chain._save()  # ensure current is saved
+                import shutil
+                shutil.copy(chain.filename, new_file)
+                print(f"Branched to {new_file}")
+                print(f"Switch with: checkout {name}")
+            except Exception as e:
+                print(f"Branch failed: {e}")
         elif cmd.startswith("checkout "):
             name = cmd[9:].strip()
             if not name:
@@ -322,11 +306,10 @@ if __name__ == "__main__":
             new_file = f"zerochain_{name}.json"
             if not os.path.exists(new_file):
                 print(f"Branch {new_file} not found.")
-                return
+                continue
             chain = FPChain(new_file)
             print(f"Checked out {new_file}")
             chain.show_chain()
-
         elif cmd.startswith("merge "):
             parts = cmd[6:].strip().split(" ", 1)
             if len(parts) < 1:
@@ -336,7 +319,6 @@ if __name__ == "__main__":
             summary = parts[1] if len(parts) > 1 else "Merged from other branch"
             other_file = f"zerochain_{name}.json"
             chain.merge_from(other_file, summary)
-
         elif cmd == "log":
             print("Commit history (simplified):")
             for i, node in enumerate(chain.nodes):
@@ -344,5 +326,11 @@ if __name__ == "__main__":
                 print(f"{i}: {node.hash} ← {parent}  {node.timestamp[:19]}")
                 print(f"   {node.content[:80]}{'...' if len(node.content)>80 else ''}")
                 print()
+        elif cmd.startswith("search "):
+            keyword = cmd[7:].strip()
+            if not keyword:
+                print("Usage: search <keyword>")
+                continue
+            chain.search(keyword)
         else:
-            print("Unknown command. Try add, add-from, challenge, reconcile, branches, show, quit")
+            print("Unknown command. Try add, add-from, challenge, reconcile, branches, list-branches, branch, checkout, merge, log, search, show, help, quit")
