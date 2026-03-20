@@ -1,0 +1,15 @@
+# Ignore all chain data files (JSON)
+*.json
+
+# Ignore the Sandbox folder (your private dev space)
+Sandbox/
+
+# Ignore Python cache files (optional but good)
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Ignore any other temp files
+*.bak
+*.tmp
